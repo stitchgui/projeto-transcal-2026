@@ -1,7 +1,5 @@
-venv/
-__pycache__/
-*.pyc
-*.egg-info/
-figures/
 docs/
+src/transcal.egg-info/
+venv/
 requisitos.md
+__pycache__/
