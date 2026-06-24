@@ -5,7 +5,7 @@ Simulação numérica de um problema acoplado de transferência de calor:
 1. Uma **câmara secadora** retangular (8 × 4 × 3 m), em **regime permanente**, com piso aquecido eletricamente a 350 °C, radiação interna entre 6 superfícies cinzas-difusas-opacas, convecção natural interna, perda global para o ambiente externo e infiltração de ar.
 2. Uma **esfera vitrocerâmica** (Ø 0,5 m) que atravessa essa câmara em 120 min, em **regime transitório**, trocando calor por convecção natural + radiação com o interior da câmara já resolvido no item 1.
 
-Os requisitos completos do problema estão em [`requisitos.md`](requisitos.md) e a especificação teórica/arquitetural detalhada (todas as equações, com numeração) está em [`docs/SPEC.md`](docs/SPEC.md). Este README resume a metodologia, discute os resultados obtidos e explica como rodar o projeto.
+Este README resume a metodologia, discute os resultados obtidos e explica como rodar o projeto.
 
 ---
 
@@ -15,8 +15,8 @@ Os requisitos completos do problema estão em [`requisitos.md`](requisitos.md) e
 
 A câmara é um paralelepípedo de 6 superfícies planas (`S1`=piso, `S2`=teto, `S3`–`S6`=paredes laterais). Os fatores de forma entre pares de superfícies são calculados **analiticamente** (não por integração numérica), usando as relações clássicas de Hamilton & Morgan (1952):
 
-- **Caso A — retângulos paralelos opostos** (piso↔teto, paredes opostas), Eq. 4.A;
-- **Caso B — retângulos perpendiculares com aresta comum** (piso/teto↔paredes), Eq. 4.B.
+- **Caso A — retângulos paralelos opostos** (piso↔teto, paredes opostas);
+- **Caso B — retângulos perpendiculares com aresta comum** (piso/teto↔paredes).
 
 Por simetria especular do paralelepípedo, apenas 6 das 15 combinações de pares precisam ser avaliadas; o restante da matriz 6×6 é obtido por reciprocidade (A<sub>i</sub>F<sub>i→j</sub> = A<sub>j</sub>F<sub>j→i</sub>) e pela equivalência geométrica piso↔teto frente às paredes.
 
@@ -28,14 +28,14 @@ Com emissividade uniforme ε = 0,9, a radiosidade **J** de cada superfície sati
 [I − (I−ε)F] J = ε σ T⁴      (resolvido por solver direto, numpy.linalg.solve)
 ```
 
-A matriz `[I−(I−ε)F]` é diagonal-dominante (Gershgorin) e portanto sempre bem-condicionada — esse "solve" é refeito a cada avaliação de **T** dentro do laço não-linear externo. O fluxo radiativo líquido por superfície é q<sub>i</sub> = ε<sub>i</sub>A<sub>i</sub>/(1−ε<sub>i</sub>) · (σT<sub>i</sub>⁴ − J<sub>i</sub>), com Σq<sub>i</sub> = 0 (conservação de energia radiativa num invólucro fechado).
+A matriz `[I−(I−ε)F]` é diagonal-dominante (Gershgorin) e portanto sempre bem-condicionada. Esse "solve" é refeito a cada avaliação de **T** dentro do laço não-linear externo. O fluxo radiativo líquido por superfície é q<sub>i</sub> = ε<sub>i</sub>A<sub>i</sub>/(1−ε<sub>i</sub>) · (σT<sub>i</sub>⁴ − J<sub>i</sub>), com Σq<sub>i</sub> = 0 (conservação de energia radiativa num invólucro fechado).
 
 ### 3. Convecção natural interna
 
-Para cada superfície, o número de Rayleigh é avaliado na temperatura de filme entre a superfície e o ar interno (nó único T<sub>int</sub>), com propriedades do ar interpoladas de tabela (Cengel & Ghajar, equivalente à Incropera Tab. A.4):
+Para cada superfície, o número de Rayleigh é avaliado na temperatura de filme entre a superfície e o ar interno (nó único T<sub>int</sub>), com propriedades do ar interpoladas de tabela (Incropera Tab. A.4):
 
 - **Piso (S1)**: placa horizontal aquecida por baixo — McAdams (Nu = 0,54·Ra<sup>1/4</sup> ou 0,15·Ra<sup>1/3</sup>);
-- **Teto (S2)**: mesma família de correlações, mas o ramo (placa quente/fria) depende do sinal de (T<sub>2</sub>−T<sub>int</sub>), que só é conhecido após a solução — reavaliado a cada iteração do solver;
+- **Teto (S2)**: mesma família de correlações, mas o ramo (placa quente/fria) depende do sinal de (T<sub>2</sub>−T<sub>int</sub>), que só é conhecido após a solução (reavaliado a cada iteração do solver);
 - **Paredes laterais (S3–S6)**: placa vertical — Churchill–Chu (1975), válida para todo Ra.
 
 ### 4. Balanço de energia em regime permanente (sistema não-linear)
@@ -56,11 +56,9 @@ A esfera entra a 25 °C e atravessa a câmara em 120 min, recebendo calor por:
 - **Convecção natural** — correlação de Churchill (1975) para esferas, Nu<sub>D</sub> = 2 + 0,589·Ra<sub>D</sub><sup>1/4</sup>/[1+(0,469/Pr)<sup>9/16</sup>]<sup>4/9</sup>;
 - **Radiação** — linearizada (h<sub>rad</sub>), trocando com uma temperatura de vizinhança efetiva T<sub>surr</sub> (média de 4ª potência das 6 superfícies, ponderada por ε<sub>k</sub>A<sub>k</sub>).
 
-O número de Biot decide o modelo térmico: Bi < 0,1 → capacitância concentrada; Bi ≥ 0,1 → gradiente interno relevante. Como o resultado cai no segundo caso (ver [Resultados](#resultados)), a condução transiente é resolvida pela **solução analítica em série de autovalores** para esfera com condição de contorno convectiva (raízes de ζ·cot ζ = 1−Bi, Incropera Tab. 5.1), entregando separadamente a temperatura do núcleo (r*=0) e da superfície (r*=1) ao longo do tempo. Como o coeficiente combinado h<sub>total</sub> depende da própria temperatura de superfície (que é a incógnita), o problema é resolvido por **iteração de ponto fixo**: itera-se uma temperatura de superfície representativa até autoconsistência com a média da curva resultante (tipicamente 5 iterações).
+O número de Biot decide o modelo térmico: Bi < 0,1 → capacitância concentrada; Bi ≥ 0,1 → gradiente interno relevante. Como o resultado cai no segundo caso (ver [Resultados](#resultados)), a condução transiente é resolvida pela **solução analítica em série de autovalores** para esfera com condição de contorno convectiva (raízes de ζ·cot ζ = 1−Bi, Incropera Tab. 5.1), entregando separadamente a temperatura do núcleo (r*=0) e da superfície (r*=1) ao longo do tempo. Como o coeficiente combinado h<sub>total</sub> depende da própria temperatura de superfície (que é a incógnita), o problema é resolvido por **iteração de ponto fixo**: itera-se uma temperatura de superfície representativa até autoconsistência com a média da curva resultante (resultado satisfatório após 5 iterações).
 
-A velocidade de deslocamento da esfera (≈1,1 mm/s) é usada apenas para verificar, via Gr<sub>D</sub>/Re<sub>D</sub>², que a convecção forçada pelo movimento é desprezível frente à natural — premissa confirmada numericamente (ver Resultados).
-
-> **Nota sobre a implementação vs. a especificação original.** `docs/SPEC.md` propunha uma árvore de módulos mais granular (`convection/`, `radiation/radiosity.py`, `balance/{steady_state_system,newton_solver}.py`, `transient/{biot,radial_fdm}.py`) e uma política de solver em 3 tentativas (`hybr` → `lm` → homotopia em ε), além de um esquema de diferenças finitas para a condução radial. Por decisão explícita de implementação, convecção/radiosidade/solver foram colapsados em `balance/solver.py`, e a condução transiente foi resolvida pela série analítica de autovalores (exata, mais eficiente que FDM) em vez de diferenças finitas — ambas as substituições são documentadas no topo dos respectivos arquivos-fonte (`SPEC_DEVIATION`).
+A velocidade de deslocamento da esfera (≈1,1 mm/s) é usada apenas para verificar, via Gr<sub>D</sub>/Re<sub>D</sub>², que a convecção forçada pelo movimento é desprezível frente à natural (premissa confirmada numericamente em Resultados).
 
 ---
 
@@ -121,27 +119,24 @@ projeto-transcal/
 ├── main.py                              # Orquestrador: roda os 3 módulos físicos e consolida itens 1-7
 ├── pyproject.toml                       # Empacotamento (setuptools, src layout)
 ├── requirements.txt                     # Dependências para instalação rápida via pip
-├── requisitos.md                        # Enunciado original do problema
-├── docs/
-│   └── SPEC.md                          # Especificação teórica completa (todas as equações numeradas)
 ├── figures/
 │   └── sphere_temperature_history.png   # Gráfico gerado pelo módulo transient
 └── src/transcal/
     ├── radiation/
-    │   └── view_factors.py              # Fatores de forma F_i->j (Eqs. 4.A, 4.B) + validação (item 1)
+    │   └── view_factors.py              # Fatores de forma F_i->j + validação (item 1)
     ├── balance/
-    │   └── solver.py                    # Propriedades do ar, convecção (5.0-5.4), radiosidade (6.1-6.2),
+    │   └── solver.py                    # Propriedades do ar, convecção, radiosidade,
     │                                     # sistema não-linear R(u)=0 e scipy.optimize.root (itens 2-6)
     └── transient/
         └── transient.py                 # Biot, Churchill (esfera), série de autovalores e plot (item 7)
 ```
 
-| Módulo | Responsabilidade | Equações (SPEC) |
+| Módulo | Responsabilidade
 |---|---|---|
-| `radiation/view_factors.py` | Geometria das 6 superfícies, F<sub>i→j</sub> (Casos A/B), reciprocidade, validação | §3, Eqs. 4.A/4.B |
-| `balance/solver.py` | Propriedades do ar, h<sub>c</sub> das 6 faces, radiosidade **J**, sistema não-linear R(**u**)=0, T₂–T₆/T<sub>int</sub>/T<sub>ar,sai</sub>/Q<sub>resist</sub> | §4–§7, Eqs. 5.0–6.7 |
-| `transient/transient.py` | Cinemática/Biot da esfera, h<sub>conv</sub>+h<sub>rad</sub>, série de autovalores (núcleo×superfície), plot | §6, Eqs. 7.1–7.8 |
-| `main.py` | Chama os 3 módulos em sequência e monta o dicionário consolidado dos itens 1–7 (`compilar_resultados`) | §7.4, §8 |
+| `radiation/view_factors.py` | Geometria das 6 superfícies, F<sub>i→j</sub> (Casos A/B), reciprocidade, validação |
+| `balance/solver.py` | Propriedades do ar, h<sub>c</sub> das 6 faces, radiosidade **J**, sistema não-linear R(**u**)=0, T₂–T₆/T<sub>int</sub>/T<sub>ar,sai</sub>/Q<sub>resist</sub> |
+| `transient/transient.py` | Cinemática/Biot da esfera, h<sub>conv</sub>+h<sub>rad</sub>, série de autovalores (núcleo×superfície), plot |
+| `main.py` | Chama os 3 módulos em sequência e monta o dicionário consolidado dos itens 1–7 (`compilar_resultados`) |
 
 Cada módulo também é executável isoladamente (bloco `if __name__ == "__main__":`) e imprime seus próprios resultados e verificações — útil para depurar uma etapa sem rodar o pipeline inteiro (ver [Como instalar e executar](#como-instalar-e-executar)).
 
@@ -173,7 +168,7 @@ pip install -r requirements.txt
 python main.py
 ```
 
-A execução imprime no terminal os 7 itens de `requisitos.md §4` (fatores de forma, coeficientes convectivos, temperaturas, radiosidades, potência da resistência e perfil da esfera) e salva o gráfico do histórico térmico em `figures/sphere_temperature_history.png`.
+A execução imprime no terminal os 7 itens do projeto (fatores de forma, coeficientes convectivos, temperaturas, radiosidades, potência da resistência e perfil da esfera) e salva o gráfico do histórico térmico em `figures/sphere_temperature_history.png`.
 
 ### Rodando módulos individualmente
 
@@ -192,4 +187,4 @@ python -m transcal.transient.transient      # regime transitório da esfera + cr
 | Arquivo | Conteúdo |
 |---|---|
 | `figures/sphere_temperature_history.png` | Gráfico T<sub>núcleo</sub>(t) e T<sub>superfície</sub>(t), 0–120 min |
-| stdout de `python main.py` | Os 7 itens consolidados de `requisitos.md §4`, em DataFrames/Series do pandas |
+| stdout de `python main.py` | Os 7 itens consolidados em DataFrames/Series do pandas |

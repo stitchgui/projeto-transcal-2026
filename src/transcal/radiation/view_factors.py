@@ -1,21 +1,18 @@
 """Fatores de forma de radiação F_i->j para um recinto retangular 3D de 6 superfícies.
 
 Implementa as relações analíticas exatas (Hamilton & Morgan, 1952) para retângulos
-paralelos opostos (Caso A, Eq. 4.A) e retângulos perpendiculares com aresta comum
-(Caso B, Eq. 4.B), conforme docs/SPEC.md Seção 3. Apenas 6 avaliações são feitas
-por simetria especular do paralelepípedo (§3.4); o restante da matriz 6x6 é
+paralelos opostos e retângulos perpendiculares com aresta comum. Apenas 6 avaliações são feitas
+por simetria especular do paralelepípedo; o restante da matriz 6x6 é
 obtido por álgebra de fatores de forma (equivalência piso<->teto) e pela regra
 da reciprocidade A_i F_i->j = A_j F_j->i.
 """
 
 import math
 
-Matrix6x6 = list[list[float]]
-
-SURFACE_LABELS: tuple[str, ...] = ("S1", "S2", "S3", "S4", "S5", "S6")
+SURFACE_LABELS = ("S1", "S2", "S3", "S4", "S5", "S6")
 
 
-def f_parallel_rectangles(a: float, b: float, c: float) -> float:
+def f_parallel_rectangles(a, b, c):
     """Eq. 4.A — F_i->j entre retângulos a x b paralelos, alinhados e diretamente
     opostos, separados pela distância c."""
     x_bar = a / c
@@ -33,7 +30,7 @@ def f_parallel_rectangles(a: float, b: float, c: float) -> float:
     return (2.0 / (math.pi * x_bar * y_bar)) * bracket
 
 
-def f_perpendicular_rectangles(w_h: float, h_v: float, l_c: float) -> float:
+def f_perpendicular_rectangles(w_h, h_v, l_c):
     """Eq. 4.B — F_i->j entre retângulo horizontal de largura w_h e retângulo
     vertical de altura h_v, compartilhando uma aresta comum de comprimento l_c."""
     w_bar = w_h / l_c
@@ -51,9 +48,7 @@ def f_perpendicular_rectangles(w_h: float, h_v: float, l_c: float) -> float:
     return term1 / (math.pi * w_bar) + log_term / (4 * math.pi * w_bar)
 
 
-def chamber_surface_areas(
-    W: float, L: float, H: float
-) -> tuple[float, float, float, float, float, float]:
+def chamber_surface_areas(W, L, H):
     """Áreas A1..A6 das 6 superfícies do recinto W x L x H (SPEC §1)."""
     a_floor_ceiling = W * L
     a_x_walls = L * H
@@ -68,12 +63,12 @@ def chamber_surface_areas(
     )
 
 
-def reciprocal_view_factor(f_pq: float, a_p: float, a_q: float) -> float:
+def reciprocal_view_factor(f_pq, a_p, a_q):
     """Regra da reciprocidade: A_p F_p->q = A_q F_q->p  =>  retorna F_q->p."""
     return a_p * f_pq / a_q
 
 
-def build_view_factor_matrix(W: float, L: float, H: float) -> Matrix6x6:
+def build_view_factor_matrix(W, L, H):
     """Monta a matriz 6x6 completa F_i->j do recinto W x L x H (SPEC §3.4).
 
     Calcula apenas as 6 relações geometricamente independentes (Eqs. 4.A/4.B);
@@ -89,7 +84,7 @@ def build_view_factor_matrix(W: float, L: float, H: float) -> Matrix6x6:
     f15 = f_perpendicular_rectangles(L, H, W)    # piso/teto <-> parede y=0 ou y=L
     f35 = f_perpendicular_rectangles(L, W, H)    # parede x=.. <-> parede y=.. (canto)
 
-    F: Matrix6x6 = [[0.0] * 6 for _ in range(6)]
+    F = [[0.0] * 6 for _ in range(6)]
 
     # Triângulo superior (i<j). O teto (índice 1) é geometricamente equivalente
     # ao piso (índice 0) frente às paredes (reflexão especular em z) — herda F13/F15.
@@ -111,29 +106,23 @@ def build_view_factor_matrix(W: float, L: float, H: float) -> Matrix6x6:
     return F
 
 
-def validate_view_factor_matrix(
-    F: Matrix6x6, areas: tuple[float, ...], tol: float = 1e-3
-) -> list[str]:
+def validate_view_factor_matrix(F, areas, tol=1e-3):
     """Critérios de verificação da SPEC §10: fechamento (soma=1 por linha),
     reciprocidade A_i F_i->j = A_j F_j->i e simetria F21=F12 (pois A1=A2)."""
-    messages: list[str] = []
-
     for i in range(6):
         row_sum = sum(F[i])
         status = "OK" if abs(row_sum - 1.0) < tol else "FALHA"
-        messages.append(f"  soma(F[{SURFACE_LABELS[i]},:]) = {row_sum:.6f}  [{status}]")
+        print(f"  soma(F[{SURFACE_LABELS[i]},:]) = {row_sum:.6f}  [{status}]")
 
     recip_ok = all(
         abs(areas[i] * F[i][j] - areas[j] * F[j][i]) < 1e-9
         for i in range(6)
         for j in range(6)
     )
-    messages.append(f"  reciprocidade A_i F_ij = A_j F_ji: {'OK' if recip_ok else 'FALHA'}")
+    print(f"  reciprocidade A_i F_ij = A_j F_ji: {'OK' if recip_ok else 'FALHA'}")
 
     sym_ok = abs(F[1][0] - F[0][1]) < 1e-12
-    messages.append(f"  simetria F21 = F12 (A1=A2): {'OK' if sym_ok else 'FALHA'}")
-
-    return messages
+    print(f"  simetria F21 = F12 (A1=A2): {'OK' if sym_ok else 'FALHA'}")
 
 
 if __name__ == "__main__":
@@ -151,5 +140,4 @@ if __name__ == "__main__":
         print(f"{SURFACE_LABELS[i]:<6}{formatted_row}")
 
     print("\nValidação (SPEC §10):")
-    for line in validate_view_factor_matrix(F, areas):
-        print(line)
+    validate_view_factor_matrix(F, areas)

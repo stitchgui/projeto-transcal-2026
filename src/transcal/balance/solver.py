@@ -1,46 +1,21 @@
-"""Balanço de energia em regime permanente da câmara secadora (docs/SPEC.md Seções 4-7).
+"""Balanço de energia em regime permanente da câmara secadora
 
-Resolve o sistema não linear R(u)=0 (Eq. 6.7) acoplando radiação (radiosidade,
-Eq. 6.1-6.2), convecção natural interna (Eqs. 5.0-5.4) e infiltração de ar
-(Eq. 6.4), extraindo T2..T6, T_int, T_ar_sai, J e a potência da resistência (Q_resist).
+Resolve o sistema não linear R(u)=0 acoplando radiação (radiosidade, convecção natural interna 
+e infiltração de ar) extraindo T2..T6, T_int, T_ar_sai, J e a potência da resistência (Q_resist).
 
-SPEC_DEVIATION (1): docs/SPEC.md §7.1/§7.3 define 'hybr' como método primário e
-'lm' como contingência, dentro de uma política de 3 tentativas (hybr -> lm ->
-homotopia em epsilon). Esta implementação chama scipy.optimize.root diretamente
-com method='lm', por instrução explícita desta task; a política de
-escalonamento completa de §7.3 não foi implementada.
-
-SPEC_DEVIATION (2): o palpite inicial usa uma heurística simplificada (peso fixo
-T_p0 = T_inf + 0.85*(T1-T_inf) + quebra de simetria via F_(1->i)), em vez da rede
-de resistências linearizada completa das Eqs. 8.1-8.3 de §7.2. A quebra de
-simetria via F_(1->i) (Eq. 8.4) foi mantida.
-
-SPEC_DEVIATION (3): por instrução desta task, convecção, radiosidade e o solver
-não-linear foram colapsados neste único arquivo, em vez dos módulos separados
-convection/{air_properties,correlations}.py, radiation/radiosity.py e
-balance/{steady_state_system,newton_solver}.py previstos na árvore do SPEC §2.
-
-Fonte das propriedades do ar (k, mu, nu, alpha, Pr, rho, cp a 1 atm): Cengel &
-Ghajar, "Heat and Mass Transfer", Table A-9 — tabela equivalente à Incropera
-Tabela A.4 referenciada genericamente em SPEC §4.1 (nenhuma fórmula fechada é
-dada na SPEC para essas propriedades; valores tabelados, interpolados
-linearmente, evitam fabricar uma correlação não documentada).
+Fonte das propriedades do ar (k, mu, nu, alpha, Pr, rho, cp a 1 atm): Incropera
+Tabela A.4.
 """
 
 from __future__ import annotations
-
-import logging
-from dataclasses import dataclass
 
 import numpy as np
 from scipy import optimize
 
 from transcal.radiation.view_factors import build_view_factor_matrix, chamber_surface_areas
 
-logger = logging.getLogger("transcal.balance.solver")
-
 # --------------------------------------------------------------------------- #
-# Propriedades do ar a 1 atm (Cengel & Ghajar, Table A-9 / ~ Incropera Tab. A.4)
+# Propriedades do ar a 1 atm (Incropera Tab. A.4)
 # --------------------------------------------------------------------------- #
 
 _AIR_T_C = np.array(
@@ -85,15 +60,15 @@ _AIR_PR = np.array(
 )
 
 
-@dataclass(frozen=True)
 class AirProperties:
-    rho: float
-    cp: float
-    k: float
-    mu: float
-    nu: float
-    alpha: float
-    Pr: float
+    def __init__(self, rho: float, cp: float, k: float, mu: float, nu: float, alpha: float, Pr: float):
+        self.rho = rho
+        self.cp = cp
+        self.k = k
+        self.mu = mu
+        self.nu = nu
+        self.alpha = alpha
+        self.Pr = Pr
 
 
 def air_properties(T_K: float) -> AirProperties:
@@ -111,7 +86,7 @@ def air_properties(T_K: float) -> AirProperties:
 
 
 # --------------------------------------------------------------------------- #
-# Correlações de convecção natural interna (SPEC §4 — Eqs. 5.0-5.4)
+# Correlações de convecção natural interna
 # --------------------------------------------------------------------------- #
 
 
@@ -161,7 +136,7 @@ def compute_h_c(T: np.ndarray, T_int: float, p: "ChamberParams") -> np.ndarray:
 
 
 # --------------------------------------------------------------------------- #
-# Radiosidade (SPEC §5.1-5.2 — Eqs. 6.1-6.2)
+# Radiosidade
 # --------------------------------------------------------------------------- #
 
 
@@ -179,26 +154,42 @@ def radiative_flux(T_K: np.ndarray, J: np.ndarray, areas: np.ndarray, eps: np.nd
 
 
 # --------------------------------------------------------------------------- #
-# Parâmetros da câmara (SPEC §1)
+# Parâmetros da câmara
 # --------------------------------------------------------------------------- #
 
 
-@dataclass(frozen=True)
 class ChamberParams:
-    W: float
-    L: float
-    H: float
-    T1: float            # K (fixo, superfície ativa)
-    T_inf: float          # K
-    U: np.ndarray          # (6,) W/m2.K
-    eps: np.ndarray         # (6,)
-    sigma: float
-    g: float
-    areas: np.ndarray       # (6,) m2
-    F: np.ndarray           # (6,6) fatores de forma F_i->j
-    Lc_horizontal: float    # m (piso/teto, SPEC §4.2)
-    mdot_inf: float         # kg/s (infiltração)
-    cp_ar: float            # J/kg.K (avaliado em T_inf, Premissa A2)
+    def __init__(
+        self,
+        W: float,
+        L: float,
+        H: float,
+        T1: float,            # K (fixo, superfície ativa)
+        T_inf: float,          # K
+        U: np.ndarray,          # (6,) W/m2.K
+        eps: np.ndarray,         # (6,)
+        sigma: float,
+        g: float,
+        areas: np.ndarray,       # (6,) m2
+        F: np.ndarray,           # (6,6) fatores de forma F_i->j
+        Lc_horizontal: float,    # m (piso/teto, SPEC §4.2)
+        mdot_inf: float,         # kg/s (infiltração)
+        cp_ar: float,            # J/kg.K (avaliado em T_inf, Premissa A2)
+    ):
+        self.W = W
+        self.L = L
+        self.H = H
+        self.T1 = T1
+        self.T_inf = T_inf
+        self.U = U
+        self.eps = eps
+        self.sigma = sigma
+        self.g = g
+        self.areas = areas
+        self.F = F
+        self.Lc_horizontal = Lc_horizontal
+        self.mdot_inf = mdot_inf
+        self.cp_ar = cp_ar
 
 
 def default_chamber_params() -> ChamberParams:
@@ -227,7 +218,7 @@ def default_chamber_params() -> ChamberParams:
 
 
 # --------------------------------------------------------------------------- #
-# Resíduo do sistema acoplado e solução não linear (SPEC §5.3-5.7, §7)
+# Resíduo do sistema acoplado e solução não linear
 # --------------------------------------------------------------------------- #
 
 
@@ -246,7 +237,7 @@ def residual(u: np.ndarray, p: ChamberParams, eval_count: list[int]) -> np.ndarr
     q = radiative_flux(T, J, p.areas, p.eps, p.sigma)
 
     R = np.empty(6)
-    for idx, k in enumerate(range(1, 6)):  # superfícies passivas S2..S6 (Eq. 6.3)
+    for idx, k in enumerate(range(1, 6)):  # superícies passivas S2..S6 (Eq. 6.3)
         q_ref = p.U[k] * p.areas[k] * (p.T1 - p.T_inf)
         R[idx] = (
             h_c[k] * p.areas[k] * (T_int - T[k]) - q[k] - p.U[k] * p.areas[k] * (T[k] - p.T_inf)
@@ -256,18 +247,15 @@ def residual(u: np.ndarray, p: ChamberParams, eval_count: list[int]) -> np.ndarr
     conv_to_air = float(np.sum(h_c * p.areas * (T - T_int)))
     R[5] = (conv_to_air - p.mdot_inf * p.cp_ar * (T_int - p.T_inf)) / q_ref_ar
 
-    logger.info(
-        "eval=%-4d ||R||_inf=%.3e  T_int=%6.2f°C  T(2..6)=%s",
-        eval_count[0],
-        float(np.max(np.abs(R))),
-        T_int - 273.15,
-        np.round(T[1:6] - 273.15, 2).tolist(),
+    print(
+        f"eval={eval_count[0]:<4d} ||R||_inf={float(np.max(np.abs(R))):.3e}  "
+        f"T_int={T_int - 273.15:6.2f}°C  T(2..6)={np.round(T[1:6] - 273.15, 2).tolist()}"
     )
     return R
 
 
 def initial_guess(p: ChamberParams) -> np.ndarray:
-    """Palpite inicial u0 (ver SPEC_DEVIATION 2 no topo do arquivo).
+    """Palpite inicial u0.
 
     Quebra a simetria entre superfícies passivas usando os fatores de forma
     F_(1->i) já disponíveis (espírito da Eq. 8.4), evitando o ponto degenerado
@@ -280,37 +268,43 @@ def initial_guess(p: ChamberParams) -> np.ndarray:
     return np.concatenate([T_passive0, [T_p0]])
 
 
-@dataclass(frozen=True)
 class ChamberSolution:
-    T_C: np.ndarray       # (6,) °C, S1..S6
-    T_int_C: float
-    T_ar_sai_C: float
-    J: np.ndarray          # (6,) W/m2
-    h_c: np.ndarray         # (6,) W/m2.K
-    q: np.ndarray           # (6,) W
-    Q_resist: float          # W
-    result: optimize.OptimizeResult
+    def __init__(
+        self,
+        T_C: np.ndarray,       # (6,) °C, S1..S6
+        T_int_C: float,
+        T_ar_sai_C: float,
+        J: np.ndarray,          # (6,) W/m2
+        h_c: np.ndarray,         # (6,) W/m2.K
+        q: np.ndarray,           # (6,) W
+        Q_resist: float,          # W
+        result: optimize.OptimizeResult,
+    ):
+        self.T_C = T_C
+        self.T_int_C = T_int_C
+        self.T_ar_sai_C = T_ar_sai_C
+        self.J = J
+        self.h_c = h_c
+        self.q = q
+        self.Q_resist = Q_resist
+        self.result = result
 
 
 def solve_chamber(p: ChamberParams, method: str = "lm") -> ChamberSolution:
-    """Resolve R(u)=0 via scipy.optimize.root (method='lm' — ver SPEC_DEVIATION 1)."""
+    """Resolve R(u)=0 via scipy.optimize.root (method='lm')."""
     u0 = initial_guess(p)
     eval_count = [0]
 
-    logger.info(
-        "Iniciando scipy.optimize.root(method=%r)  u0=%s°C",
-        method,
-        np.round(np.append(u0[:5], u0[5]) - 273.15, 2).tolist(),
+    print(
+        f"Iniciando scipy.optimize.root(method={method!r})  "
+        f"u0={np.round(np.append(u0[:5], u0[5]) - 273.15, 2).tolist()}°C"
     )
 
     result = optimize.root(residual, u0, args=(p, eval_count), method=method, tol=1e-8)
 
-    logger.info(
-        "Solver finalizado: success=%s  nfev=%d  message=%r",
-        result.success, result.nfev, result.message,
-    )
+    print(f"Solver finalizado: success={result.success}  nfev={result.nfev}  message={result.message!r}")
     if not result.success:
-        logger.warning("scipy.optimize.root NÃO convergiu: %s", result.message)
+        print(f"AVISO: scipy.optimize.root NÃO convergiu: {result.message}")
 
     T = np.empty(6)
     T[0] = p.T1
@@ -335,8 +329,6 @@ def solve_chamber(p: ChamberParams, method: str = "lm") -> ChamberSolution:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
-
     params = default_chamber_params()
     solution = solve_chamber(params, method="lm")
 
