@@ -132,7 +132,7 @@ projeto-transcal/
 ```
 
 | Módulo | Responsabilidade
-|---|---|---|
+|---|---|
 | `radiation/view_factors.py` | Geometria das 6 superfícies, F<sub>i→j</sub> (Casos A/B), reciprocidade, validação |
 | `balance/solver.py` | Propriedades do ar, h<sub>c</sub> das 6 faces, radiosidade **J**, sistema não-linear R(**u**)=0, T₂–T₆/T<sub>int</sub>/T<sub>ar,sai</sub>/Q<sub>resist</sub> |
 | `transient/transient.py` | Cinemática/Biot da esfera, h<sub>conv</sub>+h<sub>rad</sub>, série de autovalores (núcleo×superfície), plot |
